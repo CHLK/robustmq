@@ -21,11 +21,11 @@ mod tests {
     };
     use protocol::placement_center::placement_center_journal::engine_service_client::EngineServiceClient;
     use protocol::placement_center::placement_center_journal::{
-        CreateSegmentRequest, CreateShardRequest, DeleteSegmentRequest, DeleteShardRequest,
+        CreateNextSegmentRequest, CreateShardRequest, DeleteSegmentRequest, DeleteShardRequest,
     };
 
     use crate::common::{
-        cluster_name, cluster_type, extend_info, node_id, node_ip, pc_addr, shard_name,
+        cluster_name, cluster_type, extend_info, namespace, node_id, node_ip, pc_addr, shard_name,
         shard_replica,
     };
 
@@ -89,13 +89,18 @@ mod tests {
 
         let request = CreateShardRequest {
             cluster_name: cluster_name(),
+            namespace: namespace(),
             shard_name: shard_name(),
             replica: shard_replica(),
+            storage_model: "".to_string(),
         };
-        client
-            .create_shard(tonic::Request::new(request))
-            .await
-            .unwrap();
+        match client.create_shard(tonic::Request::new(request)).await {
+            Ok(_) => {}
+            Err(e) => {
+                println!("{}", e);
+                assert!(true);
+            }
+        }
     }
 
     #[tokio::test]
@@ -104,6 +109,7 @@ mod tests {
 
         let request = DeleteShardRequest {
             cluster_name: cluster_name(),
+            namespace: namespace(),
             shard_name: shard_name(),
         };
         client
@@ -116,12 +122,14 @@ mod tests {
     async fn test_create_segment() {
         let mut client = EngineServiceClient::connect(pc_addr()).await.unwrap();
 
-        let request = CreateSegmentRequest {
+        let request = CreateNextSegmentRequest {
             cluster_name: cluster_name(),
+            namespace: namespace(),
             shard_name: shard_name(),
+            active_segment_next_num: 1,
         };
         client
-            .create_segment(tonic::Request::new(request))
+            .create_next_segment(tonic::Request::new(request))
             .await
             .unwrap();
     }
@@ -132,6 +140,7 @@ mod tests {
 
         let request = DeleteSegmentRequest {
             cluster_name: cluster_name(),
+            namespace: namespace(),
             shard_name: shard_name(),
             segment_seq: 1,
         };

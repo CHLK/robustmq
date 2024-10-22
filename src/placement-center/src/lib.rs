@@ -119,6 +119,7 @@ impl PlacementCenter {
             self.rocksdb_engine_handler.clone(),
             self.cluster_cache.clone(),
             self.engine_cache.clone(),
+            self.client_poll.clone(),
         ));
 
         let openraft_node = create_raft_node(self.client_poll.clone(), data_route).await;
@@ -178,7 +179,11 @@ impl PlacementCenter {
             self.rocksdb_engine_handler.clone(),
         );
 
-        let engine_handler = GrpcEngineService::new(raft_machine_apply.clone());
+        let engine_handler = GrpcEngineService::new(
+            raft_machine_apply.clone(),
+            self.engine_cache.clone(),
+            self.cluster_cache.clone(),
+        );
 
         let openraft_handler = GrpcOpenRaftServices::new(raft_machine_apply.openraft_node.clone());
 
@@ -269,6 +274,7 @@ impl PlacementCenter {
             self.rocksdb_engine_handler.clone(),
             self.cluster_cache.clone(),
             self.engine_cache.clone(),
+            self.client_poll.clone(),
         ));
 
         let stop_recv = stop_send.subscribe();

@@ -14,16 +14,19 @@
 
 use thiserror::Error;
 
-use super::common::CommonError;
-
 #[derive(Error, Debug)]
-pub enum JournalServerError {
-    #[error("Directory {0} No rocksdb instance available")]
-    NoRocksdbInstanceAvailable(String),
+pub enum PlacementCenterError {
+    #[error("Description The interface {0} submitted logs to the commit log")]
+    RaftLogCommitTimeout(String),
 
     #[error("{0}")]
-    CommonError(#[from] CommonError),
+    CommmonError(String),
 
-    #[error("{0} request body cannot be empty")]
-    RequestBodyNotEmpty(String),
+    #[error("Cluster {0} does not exist")]
+    ClusterDoesNotExist(String),
+
+    #[error(
+        "There are not enough nodes available in the cluster, {0} is needed, and currently {1}."
+    )]
+    NotEnoughNodes(u32, u32),
 }

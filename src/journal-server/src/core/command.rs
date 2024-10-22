@@ -15,11 +15,13 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use grpc_clients::poll::ClientPool;
 use log::error;
 use protocol::journal_server::codec::JournalEnginePacket;
 use protocol::journal_server::journal_engine::{
-    GetActiveSegmentResp, GetActiveSegmentRespBody, GetClusterMetadataResp,
-    GetClusterMetadataRespBody, JournalEngineError,
+    ApiKey, ApiVersion, CreateShardResp, CreateShardRespBody, GetActiveSegmentResp,
+    GetActiveSegmentRespBody, GetClusterMetadataResp, GetClusterMetadataRespBody,
+    JournalEngineError, RespHeader, WriteResp, WriteRespBody,
 };
 
 use super::cache::CacheManager;
@@ -27,14 +29,14 @@ use super::handler::Handler;
 use crate::server::connection::NetworkConnection;
 use crate::server::connection_manager::ConnectionManager;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Command {
     handler: Handler,
 }
 
 impl Command {
-    pub fn new(cache_manager: Arc<CacheManager>) -> Self {
-        let handler = Handler::new(cache_manager);
+    pub fn new(client_poll: Arc<ClientPool>, cache_manager: Arc<CacheManager>) -> Self {
+        let handler = Handler::new(cache_manager, client_poll);
         Command { handler }
     }
 
@@ -47,8 +49,13 @@ impl Command {
     ) -> Option<JournalEnginePacket> {
         match packet {
             JournalEnginePacket::GetClusterMetadataReq(request) => {
+                let header = RespHeader {
+                    api_key: ApiKey::GetClusterMetadata.into(),
+                    api_version: ApiVersion::V0.into(),
+                    ..Default::default()
+                };
                 let resp = GetClusterMetadataResp {
-                    header: None,
+                    header: Some(header),
                     body: Some(GetClusterMetadataRespBody {
                         nodes: self.handler.get_cluster_metadata(),
                     }),
@@ -57,12 +64,35 @@ impl Command {
                 return Some(JournalEnginePacket::GetClusterMetadataResp(resp));
             }
 
+            JournalEnginePacket::CreateShardReq(request) => {
+                let mut resp = CreateShardResp::default();
+                let mut header = RespHeader {
+                    api_key: ApiKey::CreateShard.into(),
+                    api_version: ApiVersion::V0.into(),
+                    ..Default::default()
+                };
+                match self.handler.create_shard(request).await {
+                    Ok(replicas) => {
+                        resp.body = Some(CreateShardRespBody {
+                            replica_id: replicas,
+                        });
+                    }
+                    Err(e) => {
+                        header.error = Some(JournalEngineError {
+                            code: 1,
+                            error: e.to_string(),
+                        })
+                    }
+                }
+                resp.header = Some(header);
+                return Some(JournalEnginePacket::CreateShardResp(resp));
+            }
+
             JournalEnginePacket::GetActiveSegmentReq(request) => {
-                let mut resp = GetActiveSegmentResp::default();
                 let mut body = GetActiveSegmentRespBody::default();
                 match self.handler.active_segment(request).await {
-                    Ok(addrs) => {
-                        body.replica_id = addrs.replica.iter().map(|node| node.node_id).collect();
+                    Ok(segments) => {
+                        body.segments = segments;
                     }
                     Err(e) => {
                         body.error = Some(JournalEngineError {
@@ -71,7 +101,10 @@ impl Command {
                         });
                     }
                 }
-                resp.body = Some(body);
+                let resp = GetActiveSegmentResp {
+                    header: None,
+                    body: Some(body),
+                };
                 return Some(JournalEnginePacket::GetActiveSegmentResp(resp));
             }
 
@@ -79,8 +112,24 @@ impl Command {
                 self.handler.offset_commit().await;
             }
 
-            JournalEnginePacket::WriteReq(_) => {
-                self.handler.write().await;
+            JournalEnginePacket::WriteReq(request) => {
+                let mut body = WriteRespBody::default();
+                match self.handler.write(request).await {
+                    Ok(data) => {
+                        body.status = data;
+                    }
+                    Err(e) => {
+                        body.error = Some(JournalEngineError {
+                            code: 1,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+                let resp = WriteResp {
+                    header: None,
+                    body: Some(body),
+                };
+                return Some(JournalEnginePacket::WriteResp(resp));
             }
 
             JournalEnginePacket::ReadReq(_) => {

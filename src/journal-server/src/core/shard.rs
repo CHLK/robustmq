@@ -12,11 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use common_base::error::journal_server::JournalServerError;
-use metadata_struct::journal::segment::{JournalSegment, JournalSegmentStatus};
+use std::sync::Arc;
 
-pub fn create_shard(namespace: &str, shard_name: &str) -> Result<(), JournalServerError> {
-    Ok(())
+use grpc_clients::poll::ClientPool;
+use metadata_struct::journal::segment::{JournalSegment, JournalSegmentStatus};
+use metadata_struct::journal::shard::JournalShard;
+use protocol::placement_center::placement_center_journal::CreateShardRequest;
+
+use super::cache::CacheManager;
+use super::error::JournalServerError;
+
+pub async fn try_get_or_create_shard(
+    cache_manager: &Arc<CacheManager>,
+    client_poll: &Arc<ClientPool>,
+    data: &CreateShardRequest,
+) -> Result<JournalShard, JournalServerError> {
+    Ok(JournalShard::default())
 }
 
 pub fn delete_shard() -> Result<(), JournalServerError> {
@@ -30,8 +41,6 @@ pub async fn create_active_segement(
     let segment = JournalSegment {
         shard_name: shard_name.to_string(),
         segment_seq: 0,
-        start_offset: None,
-        end_offset: None,
         replica: Vec::new(),
         status: JournalSegmentStatus::CREATE,
     };

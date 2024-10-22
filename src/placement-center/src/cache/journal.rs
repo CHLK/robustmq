@@ -21,7 +21,7 @@ use crate::storage::journal::shard::ShardInfo;
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct JournalCacheManager {
     pub shard_list: DashMap<String, ShardInfo>,
-    pub segment_list: DashMap<String, SegmentInfo>,
+    pub segment_list: DashMap<String, DashMap<u32, SegmentInfo>>,
 }
 
 impl JournalCacheManager {
@@ -32,55 +32,81 @@ impl JournalCacheManager {
         }
     }
 
-    pub fn add_shard(&self, shard: ShardInfo) {
+    pub fn get_shard(
+        &self,
+        cluster_name: &str,
+        namespace: &str,
+        shard_name: &str,
+    ) -> Option<ShardInfo> {
+        let key = self.shard_key(cluster_name, namespace, shard_name);
+        let res = self.shard_list.get(&key)?;
+        Some(res.clone())
+    }
+
+    pub fn add_shard(&self, shard: &ShardInfo) {
         self.shard_list.insert(
-            self.shard_key(shard.cluster_name.clone(), shard.shard_name.clone()),
-            shard,
+            self.shard_key(&shard.cluster_name, &shard.namespace, &shard.shard_name),
+            shard.clone(),
         );
     }
 
-    pub fn remove_shard(&self, cluster_name: String, shard_name: String) {
+    pub fn remove_shard(&self, cluster_name: &str, namespace: &str, shard_name: &str) {
         self.shard_list
-            .remove(&self.shard_key(cluster_name, shard_name));
+            .remove(&self.shard_key(cluster_name, namespace, shard_name));
     }
 
-    pub fn next_segment_seq(&self, cluster_name: &str, shard_name: &str) -> u64 {
-        let key = self.shard_key(cluster_name.to_owned(), shard_name.to_owned());
+    pub fn next_segment_seq(&self, cluster_name: &str, namespace: &str, shard_name: &str) -> u32 {
+        let key = self.shard_key(cluster_name, namespace, shard_name);
         if let Some(shard) = self.shard_list.get(&key) {
             return shard.last_segment_seq + 1;
         }
-        1
+        0
     }
 
-    #[allow(dead_code)]
-    pub fn get_shard(&self, cluster_name: String, shard_name: String) -> Option<ShardInfo> {
-        let key = self.shard_key(cluster_name, shard_name);
-        if let Some(shard) = self.shard_list.get(&key) {
-            return Some(shard.clone());
+    pub fn add_segment(&self, segment: SegmentInfo) {
+        let key = self.shard_key(
+            &segment.cluster_name,
+            &segment.namespace,
+            &segment.shard_name,
+        );
+        if let Some(shard_list) = self.segment_list.get(&key) {
+            shard_list.insert(segment.segment_seq, segment);
+        } else {
+            let data = DashMap::with_capacity(8);
+            data.insert(segment.segment_seq, segment);
+            self.segment_list.insert(key, data);
+        }
+    }
+
+    pub fn get_segment(
+        &self,
+        cluster_name: &str,
+        namespace: &str,
+        shard_name: &str,
+        segment_seq: u32,
+    ) -> Option<SegmentInfo> {
+        let key = self.shard_key(cluster_name, namespace, shard_name);
+        if let Some(segment_list) = self.segment_list.get(&key) {
+            let res = segment_list.get(&segment_seq)?;
+            return Some(res.clone());
         }
         None
     }
 
-    pub fn add_segment(&self, segment: SegmentInfo) {
-        let key = self.segment_key(
-            segment.cluster_name.clone(),
-            segment.shard_name.clone(),
-            segment.segment_seq,
-        );
-
-        self.segment_list.insert(key.clone(), segment.clone());
+    pub fn remove_segment(
+        &self,
+        cluster_name: &str,
+        namespace: &str,
+        shard_name: &str,
+        segment_seq: u32,
+    ) {
+        let key = self.shard_key(cluster_name, namespace, shard_name);
+        if let Some(segment_list) = self.segment_list.get(&key) {
+            segment_list.remove(&segment_seq);
+        }
     }
 
-    pub fn remove_segment(&self, cluster_name: String, shard_name: String, segment_seq: u64) {
-        let key = self.segment_key(cluster_name.clone(), shard_name.clone(), segment_seq);
-        self.segment_list.remove(&key);
-    }
-
-    fn shard_key(&self, cluster_name: String, shard_name: String) -> String {
-        format!("{}_{}", cluster_name, shard_name)
-    }
-
-    fn segment_key(&self, cluster_name: String, shard_name: String, segment_num: u64) -> String {
-        format!("{}_{}_{}", cluster_name, shard_name, segment_num)
+    fn shard_key(&self, cluster_name: &str, namespace: &str, shard_name: &str) -> String {
+        format!("{}_{}_{}", cluster_name, namespace, shard_name)
     }
 }

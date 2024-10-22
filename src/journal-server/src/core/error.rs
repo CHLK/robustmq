@@ -12,13 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::{Deserialize, Serialize};
+use common_base::error::common::CommonError;
+use thiserror::Error;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Error, Debug)]
+pub enum JournalServerError {
+    #[error("Directory {0} No rocksdb instance available")]
+    NoRocksdbInstanceAvailable(String),
 
-pub struct JournalShard {
-    pub namespace: String,
-    pub shard_name: String,
-    pub last_segment: u32,
-    pub active_segmant: u32,
+    #[error("{0}")]
+    CommonError(#[from] CommonError),
+
+    #[error("{0} request body cannot be empty")]
+    RequestBodyNotEmpty(String),
+
+    #[error("Shard {0} does not exist")]
+    ShardNotExist(String),
 }
+
+pub enum JournalServerErrorCode {}
